@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B6B5C">
+  <title>Ponto - Administração</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="tela larga">
+    <header class="cabecalho">
+      <h1>Ponto de diaristas</h1>
+      <p class="data">Administração</p>
+    </header>
+
+    <p class="msg" id="msg" role="status" aria-live="polite" hidden></p>
+
+    <section class="bloco" id="login">
+      <form id="formLogin">
+        <label for="chave">Chave de administrador
+          <input id="chave" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="principal" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <div id="admin" hidden>
+      <section class="bloco">
+        <h2>Gerar links do dia</h2>
+        <form id="formLinks">
+          <div class="linha-form">
+            <label for="unidadeSel">Unidade
+              <select id="unidadeSel" required></select>
+            </label>
+            <label for="dataSel">Data
+              <input id="dataSel" type="date" required>
+            </label>
+          </div>
+          <label for="pessoas">Diaristas
+            <small>Uma pessoa por linha, com nome e CPF. Ex.: Maria Souza 529.982.247-25</small>
+            <textarea id="pessoas" spellcheck="false"></textarea>
+          </label>
+          <button class="principal" type="submit">Gerar links</button>
+        </form>
+        <div id="resultado"></div>
+      </section>
+
+      <section class="bloco">
+        <h2>Presenças do dia</h2>
+        <div class="barra">
+          <button class="secundario" id="atualizar" type="button">Atualizar</button>
+        </div>
+        <div class="tabela-rolagem">
+          <table>
+            <thead><tr><th>Diarista</th><th>Entrada</th><th>Saída</th></tr></thead>
+            <tbody id="corpo"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <button class="link" id="sair" type="button">Sair deste aparelho</button>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B6B5C">
+  <title>Ponto</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="tela">
+    <header class="cabecalho">
+      <p class="unidade" id="unidade"></p>
+      <h1 id="saudacao">Ponto</h1>
+      <p class="data" id="data"></p>
+    </header>
+
+    <section class="registros" id="registros" aria-label="Registros de hoje" hidden>
+      <div class="linha"><span class="rotulo">Entrada</span><span class="valor" id="entrada"></span></div>
+      <div class="linha"><span class="rotulo">Saída</span><span class="valor" id="saida"></span></div>
+    </section>
+
+    <p class="msg" id="msg" role="status" aria-live="polite">Carregando…</p>
+
+    <button class="principal" id="acao" type="button" hidden>Registrar entrada</button>
+    <p class="aviso" id="aviso" hidden>Ao registrar, você autoriza o uso da sua localização neste momento, apenas para confirmar sua presença na unidade.</p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
