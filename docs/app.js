@@ -1,7 +1,8 @@
-// Tela do colaborador: abre pelo link individual e registra entrada/saída.
+// Tela do diarista: abre pelo link individual, confirma o CPF e registra entrada/saída.
 (function () {
   const $ = function (id) { return document.getElementById(id); };
   const token = new URLSearchParams(location.search).get('t');
+  let cpfConfirmado = null; // só em memória: não é gravado no aparelho
 
   function mensagem(texto, tipo) {
     const el = $('msg');
@@ -16,6 +17,24 @@
 
   function rotuloStatus(status) {
     return status === 'DENTRO' ? 'Na unidade' : 'Fora da área';
+  }
+
+  function cpfValido(cpf) {
+    cpf = String(cpf).replace(/\D/g, '');
+    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+    for (let t = 9; t < 11; t++) {
+      let soma = 0;
+      for (let i = 0; i < t; i++) soma += Number(cpf[i]) * (t + 1 - i);
+      if (((soma * 10) % 11) % 10 !== Number(cpf[t])) return false;
+    }
+    return true;
+  }
+
+  function mascara(valor) {
+    return valor.replace(/\D/g, '').slice(0, 11)
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
   }
 
   function mostrarRegistro(el, reg) {
@@ -78,6 +97,14 @@
     });
   }
 
+  function bloquear(texto) {
+    $('confirmacao').hidden = true;
+    $('acao').hidden = true;
+    $('aviso').hidden = true;
+    mensagem(texto, 'erro');
+  }
+
+  // 1) abre o link: só mostra unidade e data, sem dados pessoais
   async function carregar() {
     if (!token) {
       mensagem('Link inválido. Peça um novo link ao seu líder.', 'erro');
@@ -86,17 +113,47 @@
     try {
       const info = await api('info', { token: token });
       if (!info.ok) { mensagem(info.erro, 'erro'); return; }
-      const estado = desenhar(info);
-      if (estado === 'completo') {
-        mensagem('Tudo certo por hoje. Entrada e saída registradas.', 'ok');
-      } else {
-        mensagem('');
-      }
+      $('unidade').textContent = info.unidade;
+      $('data').textContent = dataBR(info.data);
+      mensagem('');
+      $('confirmacao').hidden = false;
+      $('cpf').focus();
     } catch (e) {
       mensagem(e.message, 'erro');
     }
   }
 
+  // 2) confirma o CPF no servidor
+  async function confirmar(ev) {
+    ev.preventDefault();
+    const digitos = $('cpf').value.replace(/\D/g, '');
+    if (!cpfValido(digitos)) {
+      mensagem('CPF inválido. Confira os números digitados.', 'alerta'); // não gasta tentativa
+      return;
+    }
+    const botao = $('confirmar');
+    botao.disabled = true;
+    mensagem('Conferindo…');
+    try {
+      const r = await api('confirmar', { token: token, cpf: digitos });
+      if (!r.ok) {
+        if (r.bloqueado) { bloquear(r.erro); return; }
+        mensagem(r.erro, 'erro');
+        botao.disabled = false;
+        return;
+      }
+      cpfConfirmado = digitos;
+      $('cpf').value = '';
+      $('confirmacao').hidden = true;
+      const estado = desenhar(r);
+      mensagem(estado === 'completo' ? 'Tudo certo por hoje. Entrada e saída registradas.' : '', estado === 'completo' ? 'ok' : '');
+    } catch (e) {
+      mensagem(e.message, 'erro');
+      botao.disabled = false;
+    }
+  }
+
+  // 3) registra entrada ou saída com a localização
   async function registrar() {
     const botao = $('acao');
     const tipo = botao.dataset.tipo;
@@ -107,12 +164,14 @@
       mensagem('Registrando…');
       const r = await api('marcar', {
         token: token,
+        cpf: cpfConfirmado,
         tipo: tipo,
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         precisao: pos.coords.accuracy
       });
       if (!r.ok) {
+        if (r.bloqueado) { bloquear(r.erro); return; }
         mensagem(r.erro, 'erro');
         botao.disabled = false;
         return;
@@ -124,17 +183,16 @@
         mensagem(nome + ' registrada às ' + r.hora + ', mas você está a ' + r.distancia +
           ' m da unidade. O registro foi salvo como fora da área.', 'alerta');
       }
-      const info = await api('info', { token: token });
-      if (info.ok) {
-        const estado = desenhar(info);
-        if (estado === 'completo') $('aviso').hidden = true;
-      }
+      const info = await api('confirmar', { token: token, cpf: cpfConfirmado });
+      if (info.ok) desenhar(info);
     } catch (e) {
       mensagem(e.message, 'erro');
       botao.disabled = false;
     }
   }
 
+  $('cpf').addEventListener('input', function () { this.value = mascara(this.value); });
+  $('confirmacao').addEventListener('submit', confirmar);
   $('acao').addEventListener('click', registrar);
   carregar();
 })();

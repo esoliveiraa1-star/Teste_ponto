@@ -207,7 +207,9 @@
       }
       r.itens.forEach(function (i) {
         const tr = el('tr');
-        tr.appendChild(el('td', '', i.nome));
+        const tdNome = el('td', '', i.nome);
+        if (i.bloqueado) tdNome.appendChild(el('span', 'selo fora', 'Bloqueado'));
+        tr.appendChild(tdNome);
         tr.appendChild(celula(i.entrada));
         tr.appendChild(celula(i.saida));
         corpo.appendChild(tr);
