@@ -7,9 +7,13 @@
 
 const TZ = 'America/Sao_Paulo';
 
+// Erros seguidos de CPF que bloqueiam o link (para liberar: coluna tentativas = 0).
+const MAX_TENTATIVAS = 5;
+const MSG_BLOQUEADO = 'Link bloqueado por excesso de tentativas. Fale com o administrador.';
+
 const CABECALHOS = {
   Unidades: ['nome', 'latitude', 'longitude', 'raio_m'],
-  Links: ['token', 'cpf', 'nome', 'unidade', 'data', 'entrada_em', 'entrada_status', 'saida_em', 'saida_status', 'criado_em'],
+  Links: ['token', 'cpf', 'nome', 'unidade', 'data', 'entrada_em', 'entrada_status', 'saida_em', 'saida_status', 'criado_em', 'tentativas'],
   Registros: ['data_hora', 'cpf', 'nome', 'unidade', 'tipo', 'latitude', 'longitude', 'precisao_m', 'distancia_m', 'raio_m', 'status', 'token']
 };
 
@@ -65,6 +69,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents);
     switch (req.acao) {
       case 'info': resp = acaoInfo(req); break;
+      case 'confirmar': resp = acaoConfirmar(req); break;
       case 'marcar': resp = acaoMarcar(req); break;
       case 'unidades': resp = acaoUnidades(req); break;
       case 'criar_links': resp = acaoCriarLinks(req); break;
@@ -81,39 +86,54 @@ function saida(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function erro(mensagem) {
-  return { ok: false, erro: mensagem };
+function erro(mensagem, extra) {
+  return Object.assign({ ok: false, erro: mensagem }, extra || {});
 }
 
 /* ------------------------------------------------------------------ */
 /* Ações do colaborador                                                 */
 /* ------------------------------------------------------------------ */
 
+// Antes da confirmação do CPF, só devolve dados não pessoais (unidade e data).
 function acaoInfo(req) {
-  const link = buscarLink(req.token);
-  if (!link) return erro('Link inválido. Peça um novo link ao seu líder.');
-  if (link.data !== hoje()) {
-    return erro('Este link é do dia ' + dataBR(link.data) + ' e não vale para hoje.');
+  const achado = linkDoDia(req.token);
+  if (achado.falha) return achado.falha;
+  const link = achado.link;
+  if (bloqueado(link)) return erro(MSG_BLOQUEADO, { bloqueado: true });
+  return { ok: true, unidade: link.unidade, data: link.data };
+}
+
+function acaoConfirmar(req) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const achado = linkDoDia(req.token);
+    if (achado.falha) return achado.falha;
+    const link = achado.link;
+    const falhaCpf = verificarCpf(link, req.cpf);
+    if (falhaCpf) return falhaCpf;
+    return {
+      ok: true,
+      nome: link.nome,
+      unidade: link.unidade,
+      data: link.data,
+      entrada: link.entrada_em ? { hora: horaDe(link.entrada_em), status: link.entrada_status } : null,
+      saida: link.saida_em ? { hora: horaDe(link.saida_em), status: link.saida_status } : null
+    };
+  } finally {
+    lock.releaseLock();
   }
-  return {
-    ok: true,
-    nome: link.nome,
-    unidade: link.unidade,
-    data: link.data,
-    entrada: link.entrada_em ? { hora: horaDe(link.entrada_em), status: link.entrada_status } : null,
-    saida: link.saida_em ? { hora: horaDe(link.saida_em), status: link.saida_status } : null
-  };
 }
 
 function acaoMarcar(req) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const link = buscarLink(req.token);
-    if (!link) return erro('Link inválido. Peça um novo link ao seu líder.');
-    if (link.data !== hoje()) {
-      return erro('Este link é do dia ' + dataBR(link.data) + ' e não vale para hoje.');
-    }
+    const achado = linkDoDia(req.token);
+    if (achado.falha) return achado.falha;
+    const link = achado.link;
+    const falhaCpf = verificarCpf(link, req.cpf);
+    if (falhaCpf) return falhaCpf;
 
     const tipo = req.tipo;
     if (tipo !== 'entrada' && tipo !== 'saida') return erro('Tipo de registro inválido.');
@@ -193,7 +213,7 @@ function acaoCriarLinks(req) {
       let achado = existentes.filter(function (l) { return l.cpf === cpf; })[0];
       if (!achado) {
         const token = Utilities.getUuid().replace(/-/g, '').slice(0, 20);
-        novas.push([token, cpf, nome, unidade.nome, data, '', '', '', '', criadoEm]);
+        novas.push([token, cpf, nome, unidade.nome, data, '', '', '', '', criadoEm, 0]);
         achado = { cpf: cpf, token: token };
         existentes.push(achado);
       }
@@ -222,6 +242,7 @@ function acaoPainel(req) {
       return {
         nome: l.nome,
         cpf: '***.' + l.cpf.slice(3, 6) + '.' + l.cpf.slice(6, 9) + '-**',
+        bloqueado: bloqueado(l),
         token: l.token,
         entrada: l.entrada_em ? { hora: horaDe(l.entrada_em), status: l.entrada_status } : null,
         saida: l.saida_em ? { hora: horaDe(l.saida_em), status: l.saida_status } : null
@@ -257,6 +278,39 @@ function lerTabela(nomeAba) {
     });
     return obj;
   });
+}
+
+function linkDoDia(token) {
+  const link = buscarLink(token);
+  if (!link) return { falha: erro('Link inválido. Peça um novo link ao seu líder.') };
+  if (link.data !== hoje()) {
+    return { falha: erro('Este link é do dia ' + dataBR(link.data) + ' e não vale para hoje.') };
+  }
+  return { link: link };
+}
+
+function bloqueado(link) {
+  return Number(link.tentativas || 0) >= MAX_TENTATIVAS;
+}
+
+function definirTentativas(link, n) {
+  const col = CABECALHOS.Links.indexOf('tentativas') + 1;
+  SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Links').getRange(link._linha, col).setValue(n);
+}
+
+// Confere o CPF informado com o do link. Retorna null se confere, ou o erro a devolver.
+// Deve ser chamada com o lock do script ativo (evita corrida na contagem de tentativas).
+function verificarCpf(link, cpfInformado) {
+  if (bloqueado(link)) return erro(MSG_BLOQUEADO, { bloqueado: true });
+  const cpf = String(cpfInformado || '').replace(/\D/g, '');
+  if (cpf !== link.cpf) {
+    const n = Number(link.tentativas || 0) + 1;
+    definirTentativas(link, n);
+    if (n >= MAX_TENTATIVAS) return erro('CPF não confere. O link foi bloqueado. Fale com o administrador.', { bloqueado: true });
+    return erro('CPF não confere. Restam ' + (MAX_TENTATIVAS - n) + ' tentativa(s).');
+  }
+  if (Number(link.tentativas || 0) > 0) definirTentativas(link, 0);
+  return null;
 }
 
 function buscarLink(token) {
